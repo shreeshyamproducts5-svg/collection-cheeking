@@ -67,7 +67,7 @@
                 <input type="file" id="file-upload" accept=".xls, .xlsx, .csv">
                 <button class="btn-green" onclick="handleFileUpload()">अपलोड</button>
             </div>
-            <div id="loading">डेटा प्रोसेस हो रहा है...</div>
+            <div id="loading">डेटा प्रोसेस हो رہا है...</div>
             <label>📍 स्टेशन (रूट) फिल्टर</label>
             <select id="station-filter" onchange="renderCurrentView()">
                 <option value="ALL">सभी स्टेशन (All Stations)</option>
@@ -97,7 +97,7 @@
 
     <div class="footer">
         <div class="footer-totals" id="footer-totals">
-            <div>प्राप्त: ₹<span id="total-received">0</span></div>
+            <div>कैश: ₹<span id="total-received">0</span> <span style="font-size:11px; font-weight:normal; color:#ffeb3b;">(+ऑनलाइन: ₹<span id="total-online">0</span>)</span></div>
             <div>अतिरिक्त: ₹<span id="total-extra">0</span></div>
         </div>
         <div class="footer-nav">
@@ -110,7 +110,7 @@
 
     <script>
         // ==========================================
-        // 🔴 GOOGLE APP SCRIPT URL (आपका नया लिंक) 🔴
+        // GOOGLE APP SCRIPT URL 
         // ==========================================
         const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbxInpLa6e9L7ZIhzJsRKGW9lqi2E7I7JJykZEpQGG_fin7A1idGD0XlvmvBwgU5AUeJww/exec";
         // ==========================================
@@ -372,17 +372,28 @@
         function editEntry(uniqueKey) { appData.records[currentDate][uniqueKey].status = 'draft'; appData.records[currentDate][uniqueKey].synced = false; saveData(); renderCurrentView(); }
 
         function updateBadges() {
-            let totalRec = 0, totalExt = 0, draftCount = 0, savedCount = 0;
+            let totalCash = 0, totalOnline = 0, totalExtCash = 0, draftCount = 0, savedCount = 0;
             const todayRecords = appData.records[currentDate] || {};
             for (let key in todayRecords) {
                 let item = todayRecords[key];
                 if (item.received || item.discount || item.extra) {
-                    if (item.status === 'saved') { savedCount++; totalRec += parseFloat(item.received || 0); totalExt += parseFloat(item.extra || 0); } 
+                    if (item.status === 'saved') { 
+                        savedCount++; 
+                        let rec = parseFloat(item.received || 0);
+                        let ext = parseFloat(item.extra || 0);
+                        if (item.mode === 'Online') {
+                            totalOnline += (rec + ext);
+                        } else {
+                            totalCash += rec;
+                            totalExtCash += ext;
+                        }
+                    } 
                     else if (item.status === 'draft') { draftCount++; }
                 }
             }
-            document.getElementById('total-received').innerText = totalRec;
-            document.getElementById('total-extra').innerText = totalExt;
+            document.getElementById('total-received').innerText = totalCash;
+            document.getElementById('total-online').innerText = totalOnline;
+            document.getElementById('total-extra').innerText = totalExtCash;
             document.getElementById('draft-count').style.display = draftCount > 0 ? 'block' : 'none';
             document.getElementById('draft-count').innerText = draftCount;
             document.getElementById('saved-count').style.display = savedCount > 0 ? 'block' : 'none';
@@ -469,7 +480,7 @@
             let partyMap = {}; appData.parties.forEach((p, idx) => { partyMap[p.code !== "N/A" ? p.code : String(idx) + p.name] = p; });
 
             let finalReport = `📊 *कलेक्शन रिपोर्ट*\n👤 *कलेक्शन बॉय:* ${receiverName}\n📅 ${fromDateStr} से ${toDateStr}\n`;
-            let totalRec = 0, totalDisc = 0, totalExt = 0, count = 0;
+            let totalCash = 0, totalOnline = 0, totalDisc = 0, totalExtCash = 0, count = 0;
             let dateKeys = Object.keys(appData.records).sort();
             
             for(let dateKey of dateKeys) {
@@ -487,15 +498,23 @@
                             let pInfo = partyMap[pKey] || { name: "अज्ञात", station: "-" };
                             let parts = [`₹${entry.received || 0}`];
                             
+                            let recAmount = parseFloat(entry.received || 0);
+                            let extAmount = parseFloat(entry.extra || 0);
+                            let discAmount = parseFloat(entry.discount || 0);
+
                             if (entry.mode === 'Online') {
                                 parts.push(`(ऑनलाइन: ${entry.remark || '-'})`);
+                                totalOnline += (recAmount + extAmount);
+                            } else {
+                                totalCash += recAmount;
+                                totalExtCash += extAmount;
                             }
                             
-                            if (entry.discount && parseFloat(entry.discount) > 0) parts.push(`छूट: ₹${entry.discount}`);
-                            if (entry.extra && parseFloat(entry.extra) > 0) parts.push(`एक्स्ट्रा: ₹${entry.extra}`);
+                            if (entry.discount && discAmount > 0) parts.push(`छूट: ₹${entry.discount}`);
+                            if (entry.extra && extAmount > 0) parts.push(`एक्स्ट्रा: ₹${entry.extra}`);
                             
                             dayText += `🔹 ${pInfo.name} -> ${parts.join(' | ')}\n`;
-                            totalRec += parseFloat(entry.received || 0); totalDisc += parseFloat(entry.discount || 0); totalExt += parseFloat(entry.extra || 0); count++;
+                            totalDisc += discAmount; count++;
                         }
                     }
                     if (hasDataForDay) finalReport += dayText;
@@ -503,7 +522,11 @@
             }
 
             if(count === 0) { document.getElementById('report-output').innerText = "इस तारीख के बीच कोई सेव किया हुआ डेटा नहीं मिला।"; currentReportText = ""; return; }
-            finalReport += `\n------------------\n💰 *कुल प्राप्त:* ₹${totalRec}\n📉 *कुल छूट:* ₹${totalDisc}\n📈 *कुल एक्स्ट्रा:* ₹${totalExt}`;
+            finalReport += `\n------------------\n💵 *कुल कैश प्राप्त:* ₹${totalCash}`;
+            if (totalExtCash > 0) finalReport += `\n📈 *कुल अतिरिक्त कैश:* ₹${totalExtCash}`;
+            if (totalOnline > 0) finalReport += `\n📱 *कुल ऑनलाइन:* ₹${totalOnline}`;
+            if (totalDisc > 0) finalReport += `\n📉 *कुल छूट:* ₹${totalDisc}`;
+            
             document.getElementById('report-output').innerText = finalReport; currentReportText = finalReport;
         }
 
